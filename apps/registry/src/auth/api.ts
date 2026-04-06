@@ -5,14 +5,14 @@ import { resolveAuth } from "./middleware.js";
 const app = new Hono<{ Bindings: Env }>();
 
 app.post("/api/internal/register-token", async (c) => {
-  const { email, github_id, name, token_hash } = await c.req.json<{
+  const { email, user_id, name, token_hash } = await c.req.json<{
     email: string;
-    github_id: string;
+    user_id: string;
     name?: string;
     token_hash: string;
   }>();
 
-  if (!email || !github_id || !token_hash) {
+  if (!email || !user_id || !token_hash) {
     return c.json({ error: "missing fields" }, 400);
   }
 
@@ -26,7 +26,7 @@ app.post("/api/internal/register-token", async (c) => {
        name = excluded.name,
        updated_at = excluded.updated_at`,
   )
-    .bind(crypto.randomUUID(), email, github_id, name || null, now, now)
+    .bind(crypto.randomUUID(), email, user_id, name || null, now, now)
     .run();
 
   const customer = await c.env.DB.prepare(
@@ -37,6 +37,23 @@ app.post("/api/internal/register-token", async (c) => {
 
   if (!customer) {
     return c.json({ error: "failed to create customer" }, 500);
+  }
+
+  const MAX_TOKENS_PER_USER = 100;
+  const tokenCount = await c.env.DB.prepare(
+    "SELECT COUNT(*) as count FROM token WHERE customer_id = ?",
+  )
+    .bind(customer.id)
+    .first<{ count: number }>();
+
+  if (tokenCount && tokenCount.count >= MAX_TOKENS_PER_USER) {
+    await c.env.DB.prepare(
+      `DELETE FROM token WHERE id IN (
+        SELECT id FROM token WHERE customer_id = ? ORDER BY created_at ASC LIMIT ?
+      )`,
+    )
+      .bind(customer.id, tokenCount.count - MAX_TOKENS_PER_USER + 1)
+      .run();
   }
 
   await c.env.DB.prepare(

@@ -26,7 +26,7 @@ export async function POST(req: Request) {
       },
       body: JSON.stringify({
         email: session.user.email,
-        github_id: session.user.id,
+        user_id: session.user.id,
         name: session.user.name,
         token_hash: tokenHash,
       }),

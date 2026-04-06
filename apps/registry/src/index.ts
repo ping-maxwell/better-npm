@@ -10,6 +10,24 @@ import { syncFromChangesFeed } from "./watcher/changes.js";
 
 const app = new Hono<{ Bindings: Env }>();
 
+const RATE_LIMIT_PER_MINUTE = 5000;
+
+app.use("*", async (c, next) => {
+  const ip = c.req.header("cf-connecting-ip") || "unknown";
+  const window = Math.floor(Date.now() / 60000);
+  const key = `rl:${ip}:${window}`;
+  try {
+    const count = parseInt((await c.env.AUTH_CACHE.get(key)) || "0", 10);
+    if (count > RATE_LIMIT_PER_MINUTE) {
+      return c.json({ error: "rate limit exceeded, retry later" }, 429);
+    }
+    c.executionCtx.waitUntil(
+      c.env.AUTH_CACHE.put(key, String(count + 1), { expirationTtl: 120 }),
+    );
+  } catch {}
+  return next();
+});
+
 app.all("/-/*", async (c) => {
   if (c.req.path === "/-/ping") return c.json({ ok: true, registry: "better-npm" });
   return proxyToNpm(c);
@@ -21,11 +39,23 @@ app.put("*", async (c, next) => {
 
 app.use("/api/internal/*", async (c, next) => {
   const secret = c.req.header("X-Internal-Secret");
-  if (!c.env.INTERNAL_SECRET || secret !== c.env.INTERNAL_SECRET) {
+  if (!c.env.INTERNAL_SECRET || !secret || !constantTimeEqual(secret, c.env.INTERNAL_SECRET)) {
     return c.json({ error: "forbidden" }, 403);
   }
   return next();
 });
+
+function constantTimeEqual(a: string, b: string): boolean {
+  const encoder = new TextEncoder();
+  const bufA = encoder.encode(a);
+  const bufB = encoder.encode(b);
+  if (bufA.byteLength !== bufB.byteLength) return false;
+  return (crypto.subtle as SubtleCryptoCf).timingSafeEqual(bufA, bufB);
+}
+
+interface SubtleCryptoCf extends SubtleCrypto {
+  timingSafeEqual(a: ArrayBufferView, b: ArrayBufferView): boolean;
+}
 
 app.route("/", authRouter);
 app.route("/", adminRouter);

@@ -12,6 +12,11 @@ const REGISTRY_URL = process.env.REGISTRY_URL || "http://localhost:8787";
 const INTERNAL_SECRET = process.env.INTERNAL_SECRET || "";
 
 export async function registryFetch(path: string, init?: RequestInit) {
+  if (!INTERNAL_SECRET) {
+    throw new Error(
+      "INTERNAL_SECRET is not configured — set it in your environment variables",
+    );
+  }
   const res = await fetch(`${REGISTRY_URL}${path}`, {
     cache: "no-store",
     ...init,

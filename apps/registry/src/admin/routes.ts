@@ -954,7 +954,7 @@ app.patch("/api/internal/admin/versions/:id/status", async (c) => {
   const versionId = c.req.param("id");
   const { status } = await c.req.json<{ status: string }>();
 
-  if (!["approved", "rejected", "pending"].includes(status)) {
+  if (!["approved", "rejected", "pending", "under_review"].includes(status)) {
     return c.json({ error: "invalid status" }, 400);
   }
 

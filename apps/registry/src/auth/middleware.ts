@@ -13,7 +13,9 @@ export async function optionalAuth(c: Context<{ Bindings: Env }>, next: Next) {
         c.set("customerId", result.data.customerId);
       }
     }
-  } catch {}
+  } catch (err) {
+    console.error("[auth] Optional auth failed:", err);
+  }
   await next();
 }
 

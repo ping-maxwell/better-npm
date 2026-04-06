@@ -37,32 +37,32 @@ async function handleTarball(c: any) {
     return c.json({ error: "tarball not found" }, 404);
   }
 
-  const contentLength = Number(res.headers.get("content-length") || 0);
+  const arrayBuffer = await res.arrayBuffer();
+
+  const expectedSha = await lookupExpectedSha(c.env.DB, packageName, filename);
+  if (expectedSha) {
+    const hashBuffer = await crypto.subtle.digest("SHA-1", arrayBuffer);
+    const actualSha = [...new Uint8Array(hashBuffer)]
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+    if (actualSha !== expectedSha) {
+      console.error(
+        `[tarball] SHA-1 mismatch for ${packageName}/${filename}: expected=${expectedSha} actual=${actualSha}`,
+      );
+      return c.json({ error: "tarball integrity check failed" }, 502);
+    }
+  }
 
   c.executionCtx.waitUntil(recordInstall(c.env.DB, packageName, filename, customerId, false));
 
-  if (contentLength > 5 * 1024 * 1024) {
-    c.executionCtx.waitUntil(
-      fetchAndCacheToR2(c.env, upstreamUrl, r2Key),
-    );
-
-    return new Response(res.body, {
-      headers: {
-        "Content-Type": "application/octet-stream",
-        "X-Cache": "MISS",
-      },
-    });
-  }
-
-  const [cacheStream, clientStream] = res.body.tee();
-
+  const bufferCopy = arrayBuffer.slice(0);
   c.executionCtx.waitUntil(
-    c.env.TARBALLS.put(r2Key, cacheStream, {
+    c.env.TARBALLS.put(r2Key, bufferCopy, {
       httpMetadata: { contentType: "application/octet-stream" },
     }),
   );
 
-  return new Response(clientStream, {
+  return new Response(arrayBuffer, {
     headers: {
       "Content-Type": "application/octet-stream",
       "X-Cache": "MISS",
@@ -98,7 +98,33 @@ async function recordInstall(
         .bind(id, packageName, filename, cid, ch, ts)
         .run();
     }
-  } catch {}
+  } catch (err) {
+    console.error(`[tarball] Failed to record install for ${packageName}/${filename}:`, err);
+  }
+}
+
+async function lookupExpectedSha(
+  db: D1Database,
+  packageName: string,
+  filename: string,
+): Promise<string | null> {
+  try {
+    const match = filename.match(/-(\d+\.\d+\.\d+[^.]*)\.tgz$/);
+    if (!match) return null;
+    const version = match[1];
+    const row = await db
+      .prepare(
+        `SELECT pv.tarball_sha FROM package_version pv
+         JOIN package p ON p.id = pv.package_id
+         WHERE p.name = ? AND pv.version = ?`,
+      )
+      .bind(packageName, version)
+      .first<{ tarball_sha: string }>();
+    return row?.tarball_sha || null;
+  } catch (err) {
+    console.error(`[tarball] SHA lookup failed for ${packageName}/${filename}:`, err);
+    return null;
+  }
 }
 
 async function lookupVersionStatus(
@@ -128,20 +154,10 @@ async function lookupVersionStatus(
 
     if (row?.status === "rejected") return "blocked";
     return row?.status ?? "unreviewed";
-  } catch {
+  } catch (err) {
+    console.error(`[tarball] Version status lookup failed for ${packageName}/${filename}:`, err);
     return "unreviewed";
   }
-}
-
-async function fetchAndCacheToR2(env: Env, url: string, r2Key: string) {
-  try {
-    const res = await fetch(url);
-    if (res.ok && res.body) {
-      await env.TARBALLS.put(r2Key, res.body, {
-        httpMetadata: { contentType: "application/octet-stream" },
-      });
-    }
-  } catch {}
 }
 
 export { app as tarballRouter };
