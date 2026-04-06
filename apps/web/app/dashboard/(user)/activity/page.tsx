@@ -1,89 +1,108 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
+import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { registryFetch } from "@/lib/admin";
 
 export const metadata: Metadata = {
-  title: "Activity — better-npm",
+  title: "Packages — better-npm",
 };
 
-interface InstallRecord {
-  id: string;
+interface PackageSummary {
   package_name: string;
-  filename: string;
-  cache_hit: number;
-  created_at: number;
-  version_status: string;
+  install_count: number;
+  version_count: number;
+  last_installed: number;
+  first_installed: number;
+  status: "tracked" | "blocked" | "untracked";
 }
 
-interface ActivityResponse {
-  activity: InstallRecord[];
+interface PackagesResponse {
+  packages: PackageSummary[];
   total: number;
   limit: number;
   offset: number;
 }
 
-const PER_PAGE_OPTIONS = [25, 50, 100] as const;
+type SortKey = "name" | "installs" | "versions" | "recent";
+type SortOrder = "asc" | "desc";
 
-function buildHref(params: { page?: number; per?: number }) {
+const DEFAULT_SORT: SortKey = "recent";
+const DEFAULT_ORDER: SortOrder = "desc";
+
+function buildHref(params: {
+  page?: number;
+  per?: number;
+  search?: string;
+  sort?: SortKey;
+  order?: SortOrder;
+}) {
   const qs = new URLSearchParams();
   if (params.page && params.page > 1) qs.set("page", String(params.page));
-  if (params.per && params.per !== 50) qs.set("per", String(params.per));
+  if (params.per && params.per !== 30) qs.set("per", String(params.per));
+  if (params.search) qs.set("q", params.search);
+  if (params.sort && params.sort !== DEFAULT_SORT)
+    qs.set("sort", params.sort);
+  if (params.order && params.order !== DEFAULT_ORDER)
+    qs.set("order", params.order);
   const s = qs.toString();
   return `/dashboard/activity${s ? `?${s}` : ""}`;
 }
 
-function getPageNumbers(current: number, total: number): (number | "...")[] {
-  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
-  const pages: (number | "...")[] = [];
-  pages.push(1);
-  if (current > 3) pages.push("...");
-  for (
-    let i = Math.max(2, current - 1);
-    i <= Math.min(total - 1, current + 1);
-    i++
-  ) {
-    pages.push(i);
+function nextSort(
+  column: SortKey,
+  currentSort: SortKey,
+  currentOrder: SortOrder,
+): { sort: SortKey; order: SortOrder } {
+  if (column === currentSort) {
+    return { sort: column, order: currentOrder === "desc" ? "asc" : "desc" };
   }
-  if (current < total - 2) pages.push("...");
-  pages.push(total);
-  return pages;
+  return { sort: column, order: column === "name" ? "asc" : "desc" };
 }
 
-export default async function ActivityPage({
+export default async function PackagesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; per?: string }>;
+  searchParams: Promise<{
+    page?: string;
+    per?: string;
+    q?: string;
+    sort?: string;
+    order?: string;
+  }>;
 }) {
   const h = await headers();
   const session = await auth.api.getSession({ headers: h });
   const email = session?.user?.email;
   const params = await searchParams;
-  const perPage = PER_PAGE_OPTIONS.includes(Number(params.per) as any)
+  const perPage = [20, 30, 50].includes(Number(params.per))
     ? Number(params.per)
-    : 50;
+    : 30;
   const page = Math.max(1, Number(params.page || 1));
   const offset = (page - 1) * perPage;
+  const search = params.q?.trim() || "";
+  const sort: SortKey = (["name", "installs", "versions", "recent"] as const).includes(
+    params.sort as any,
+  )
+    ? (params.sort as SortKey)
+    : DEFAULT_SORT;
+  const order: SortOrder = params.order === "asc" ? "asc" : DEFAULT_ORDER;
 
-  const data: ActivityResponse = email
+  const data: PackagesResponse = email
     ? await registryFetch(
-        `/api/internal/user/activity?email=${encodeURIComponent(email)}&limit=${perPage}&offset=${offset}`,
-      ).catch(() => ({ activity: [], total: 0, limit: perPage, offset }))
-    : { activity: [], total: 0, limit: perPage, offset };
+        `/api/internal/user/packages?email=${encodeURIComponent(email)}&limit=${perPage}&offset=${offset}${search ? `&search=${encodeURIComponent(search)}` : ""}&sort=${sort}&order=${order}`,
+      ).catch(() => ({ packages: [], total: 0, limit: perPage, offset }))
+    : { packages: [], total: 0, limit: perPage, offset };
 
   const totalPages = Math.max(1, Math.ceil(data.total / perPage));
   const safePage = Math.min(page, totalPages);
-  const rangeStart = data.total === 0 ? 0 : offset + 1;
-  const rangeEnd = Math.min(offset + perPage, data.total);
-  const pageNumbers = getPageNumbers(safePage, totalPages);
 
-  if (!data.activity.length && safePage === 1) {
+  if (!data.packages.length && safePage === 1 && !search) {
     return (
       <div className="rounded border border-dashed border-foreground/[0.08] px-6 py-16 text-center">
-        <p className="text-sm text-foreground/30">No install activity yet</p>
+        <p className="text-sm text-foreground/30">No packages installed yet</p>
         <p className="mx-auto mt-2 max-w-xl text-sm text-foreground/20">
-          Installs will appear here once packages are downloaded through the
-          registry.
+          Packages will appear here once you install them through the registry.
         </p>
         <p className="mt-4 text-xs text-foreground/20">
           Run{" "}
@@ -96,37 +115,222 @@ export default async function ActivityPage({
     );
   }
 
-  const paginationNav = (
+  const columns: {
+    key: SortKey;
+    label: string;
+    align: "left" | "right";
+  }[] = [
+    { key: "name", label: "Package", align: "left" },
+    { key: "installs", label: "Installs", align: "right" },
+    { key: "versions", label: "Versions", align: "right" },
+  ];
+
+  return (
+    <div className="h-full flex flex-col">
+      <div className="flex-shrink-0 flex flex-wrap items-center gap-3 mb-4">
+        <form
+          action="/dashboard/activity"
+          method="GET"
+          className="flex-1 min-w-[200px]"
+        >
+          <input
+            type="text"
+            name="q"
+            placeholder="Search packages…"
+            defaultValue={search}
+            className="w-full px-3 py-2 text-sm bg-transparent border border-foreground/[0.1] rounded placeholder:text-foreground/20 focus:outline-none focus:border-foreground/25 transition-colors"
+          />
+        </form>
+        <p className="text-xs text-foreground/30 font-mono tabular-nums whitespace-nowrap">
+          {data.total.toLocaleString()} package{data.total !== 1 ? "s" : ""}
+        </p>
+      </div>
+
+      {data.packages.length === 0 && search ? (
+        <div className="rounded border border-dashed border-foreground/[0.08] px-6 py-12 text-center">
+          <p className="text-sm text-foreground/30">
+            No packages matching &ldquo;{search}&rdquo;
+          </p>
+        </div>
+      ) : (
+        <div className="flex-1 min-h-0 border border-foreground/[0.08] rounded overflow-auto thin-scrollbar">
+          <table className="w-full text-sm min-w-[540px]">
+            <thead className="sticky top-0 z-10 bg-background">
+              <tr className="border-b border-foreground/[0.06] bg-foreground/[0.02]">
+                {columns.map((col) => {
+                  const ns = nextSort(col.key, sort, order);
+                  const isActive = sort === col.key;
+                  return (
+                    <th
+                      key={col.key}
+                      className={`${col.align === "right" ? "text-right" : "text-left"} px-4 py-2.5 font-normal`}
+                    >
+                      <a
+                        href={buildHref({
+                          page: 1,
+                          per: perPage,
+                          search,
+                          sort: ns.sort,
+                          order: ns.order,
+                        })}
+                        className={`inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-wider transition-colors ${
+                          isActive
+                            ? "text-foreground/60"
+                            : "text-foreground/30 hover:text-foreground/50"
+                        }`}
+                      >
+                        {col.label}
+                        <SortIndicator
+                          active={isActive}
+                          direction={isActive ? order : null}
+                        />
+                      </a>
+                    </th>
+                  );
+                })}
+                <th className="text-left px-4 py-2.5 font-normal">
+                  <span className="text-[10px] font-mono uppercase tracking-wider text-foreground/30">
+                    Status
+                  </span>
+                </th>
+                <th className="text-left px-4 py-2.5 font-normal">
+                  <a
+                    href={buildHref({
+                      page: 1,
+                      per: perPage,
+                      search,
+                      ...nextSort("recent", sort, order),
+                    })}
+                    className={`inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-wider transition-colors ${
+                      sort === "recent"
+                        ? "text-foreground/60"
+                        : "text-foreground/30 hover:text-foreground/50"
+                    }`}
+                  >
+                    Last installed
+                    <SortIndicator
+                      active={sort === "recent"}
+                      direction={sort === "recent" ? order : null}
+                    />
+                  </a>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.packages.map((pkg) => (
+                <tr
+                  key={pkg.package_name}
+                  className="border-b border-foreground/[0.04] last:border-0 hover:bg-foreground/[0.02] transition-colors"
+                >
+                  <td className="px-4 py-3">
+                    <Link
+                      href={`/dashboard/activity/pkg?name=${encodeURIComponent(pkg.package_name)}`}
+                      className="text-[13px] font-mono hover:underline underline-offset-4 decoration-foreground/20"
+                    >
+                      {pkg.package_name}
+                    </Link>
+                  </td>
+                  <td className="px-4 py-3 text-right text-[13px] font-mono tabular-nums text-foreground/50">
+                    {pkg.install_count.toLocaleString()}
+                  </td>
+                  <td className="px-4 py-3 text-right text-[13px] font-mono tabular-nums text-foreground/50">
+                    {pkg.version_count}
+                  </td>
+                  <td className="px-4 py-3">
+                    <TrackingBadge status={pkg.status} />
+                  </td>
+                  <td className="px-4 py-3 text-[13px] text-foreground/30">
+                    {formatRelative(pkg.last_installed)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {totalPages > 1 && (
+        <div className="flex-shrink-0 flex flex-wrap items-center justify-between gap-2 mt-3">
+          <p className="text-xs text-foreground/25 font-mono tabular-nums">
+            Page {safePage} of {totalPages}
+          </p>
+          <Pagination
+            current={safePage}
+            total={totalPages}
+            perPage={perPage}
+            search={search}
+            sort={sort}
+            order={order}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SortIndicator({
+  active,
+  direction,
+}: {
+  active: boolean;
+  direction: SortOrder | null;
+}) {
+  if (!active || !direction) {
+    return (
+      <span className="text-foreground/15 text-[9px]">↕</span>
+    );
+  }
+  return (
+    <span className="text-[9px]">
+      {direction === "asc" ? "↑" : "↓"}
+    </span>
+  );
+}
+
+function Pagination({
+  current,
+  total,
+  perPage,
+  search,
+  sort,
+  order,
+}: {
+  current: number;
+  total: number;
+  perPage: number;
+  search: string;
+  sort: SortKey;
+  order: SortOrder;
+}) {
+  const pages = getPageNumbers(current, total);
+  return (
     <div className="flex items-center gap-1.5">
       <a
         href={
-          safePage > 1
-            ? buildHref({ page: safePage - 1, per: perPage })
+          current > 1
+            ? buildHref({ page: current - 1, per: perPage, search, sort, order })
             : undefined
         }
-        aria-disabled={safePage <= 1}
+        aria-disabled={current <= 1}
         className={`px-2 py-1 rounded text-xs transition-colors ${
-          safePage > 1
+          current > 1
             ? "text-foreground/50 hover:text-foreground hover:bg-foreground/[0.05]"
             : "text-foreground/15 pointer-events-none"
         }`}
       >
         ← Prev
       </a>
-      {pageNumbers.map((p, i) =>
+      {pages.map((p, i) =>
         p === "..." ? (
-          <span
-            key={`ellipsis-${i}`}
-            className="text-foreground/20 px-1 text-xs"
-          >
+          <span key={`e-${i}`} className="text-foreground/20 px-1 text-xs">
             …
           </span>
         ) : (
           <a
             key={p}
-            href={buildHref({ page: p, per: perPage })}
+            href={buildHref({ page: p, per: perPage, search, sort, order })}
             className={`min-w-[28px] text-center px-1.5 py-1 rounded text-xs transition-colors ${
-              p === safePage
+              p === current
                 ? "bg-foreground/[0.08] text-foreground font-medium"
                 : "text-foreground/40 hover:text-foreground hover:bg-foreground/[0.04]"
             }`}
@@ -137,13 +341,13 @@ export default async function ActivityPage({
       )}
       <a
         href={
-          safePage < totalPages
-            ? buildHref({ page: safePage + 1, per: perPage })
+          current < total
+            ? buildHref({ page: current + 1, per: perPage, search, sort, order })
             : undefined
         }
-        aria-disabled={safePage >= totalPages}
+        aria-disabled={current >= total}
         className={`px-2 py-1 rounded text-xs transition-colors ${
-          safePage < totalPages
+          current < total
             ? "text-foreground/50 hover:text-foreground hover:bg-foreground/[0.05]"
             : "text-foreground/15 pointer-events-none"
         }`}
@@ -152,121 +356,40 @@ export default async function ActivityPage({
       </a>
     </div>
   );
-
-  return (
-    <div className="h-full flex flex-col">
-      <div className="flex-shrink-0 flex flex-wrap items-center justify-end gap-3 mb-4">
-        <div className="flex items-center gap-1.5 text-xs text-foreground/30">
-          <span>Show</span>
-          {PER_PAGE_OPTIONS.map((opt) => (
-            <a
-              key={opt}
-              href={buildHref({ page: 1, per: opt })}
-              className={`px-1.5 py-0.5 rounded transition-colors ${
-                opt === perPage
-                  ? "bg-foreground/[0.08] text-foreground/60"
-                  : "hover:text-foreground/50"
-              }`}
-            >
-              {opt}
-            </a>
-          ))}
-        </div>
-        <p className="text-xs text-foreground/30 font-mono tabular-nums">
-          {rangeStart}–{rangeEnd} of {data.total.toLocaleString()}
-        </p>
-      </div>
-
-      <div className="flex-1 min-h-0 border border-foreground/[0.08] rounded overflow-auto thin-scrollbar">
-        <table className="w-full text-sm min-w-[500px]">
-          <thead className="sticky top-0 z-10 bg-background">
-            <tr className="border-b border-foreground/[0.06] bg-foreground/[0.02]">
-              <th className="text-left px-4 py-2.5 text-[10px] font-mono uppercase tracking-wider text-foreground/30 font-normal">
-                Package
-              </th>
-              <th className="text-left px-4 py-2.5 text-[10px] font-mono uppercase tracking-wider text-foreground/30 font-normal">
-                Version
-              </th>
-              <th className="text-left px-4 py-2.5 text-[10px] font-mono uppercase tracking-wider text-foreground/30 font-normal">
-                Status
-              </th>
-              <th className="text-left px-4 py-2.5 text-[10px] font-mono uppercase tracking-wider text-foreground/30 font-normal">
-                Time
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.activity.map((install) => {
-              const version = extractVersion(install.filename);
-              return (
-                <tr
-                  key={install.id}
-                  className="border-b border-foreground/[0.04] last:border-0 hover:bg-foreground/[0.02] transition-colors"
-                >
-                  <td className="px-4 py-3">
-                    <p className="text-[13px] font-mono">
-                      {install.package_name}
-                    </p>
-                  </td>
-                  <td className="px-4 py-3 text-[13px] text-foreground/50 font-mono">
-                    {version || "—"}
-                  </td>
-                  <td className="px-4 py-3">
-                    <StatusBadge status={install.version_status} />
-                  </td>
-                  <td className="px-4 py-3 text-[13px] text-foreground/30">
-                    {formatRelative(install.created_at)}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-
-      {totalPages > 1 && (
-        <div className="flex-shrink-0 flex flex-wrap items-center justify-between gap-2 mt-3">
-          <p className="text-xs text-foreground/25 font-mono tabular-nums">
-            Page {safePage} of {totalPages}
-          </p>
-          {paginationNav}
-        </div>
-      )}
-    </div>
-  );
 }
 
-function StatusBadge({ status }: { status: string }) {
+function getPageNumbers(current: number, total: number): (number | "...")[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  const pages: (number | "...")[] = [1];
+  if (current > 3) pages.push("...");
+  for (
+    let i = Math.max(2, current - 1);
+    i <= Math.min(total - 1, current + 1);
+    i++
+  )
+    pages.push(i);
+  if (current < total - 2) pages.push("...");
+  pages.push(total);
+  return pages;
+}
+
+function TrackingBadge({ status }: { status: string }) {
   const config: Record<string, { label: string; classes: string }> = {
-    approved: {
-      label: "approved",
+    tracked: {
+      label: "reviewed",
       classes: "bg-emerald-500/10 text-emerald-400/80 border-emerald-500/15",
-    },
-    pending: {
-      label: "pending",
-      classes: "bg-amber-500/10 text-amber-400/80 border-amber-500/15",
-    },
-    rejected: {
-      label: "rejected",
-      classes: "bg-red-500/10 text-red-400/80 border-red-500/15",
     },
     blocked: {
       label: "blocked",
       classes: "bg-red-500/10 text-red-400/80 border-red-500/15",
     },
-    under_review: {
-      label: "reviewing",
-      classes: "bg-blue-500/10 text-blue-400/80 border-blue-500/15",
-    },
-    unreviewed: {
+    untracked: {
       label: "unreviewed",
       classes:
         "bg-foreground/[0.04] text-foreground/30 border-foreground/[0.08]",
     },
   };
-
-  const c = config[status] || config.unreviewed;
-
+  const c = config[status] || config.untracked;
   return (
     <span
       className={`inline-block font-mono text-[10px] px-1.5 py-0.5 rounded border ${c.classes}`}
@@ -274,11 +397,6 @@ function StatusBadge({ status }: { status: string }) {
       {c.label}
     </span>
   );
-}
-
-function extractVersion(filename: string): string | null {
-  const match = filename.match(/-(\d+\.\d+\.\d+[^.]*)\.tgz$/);
-  return match ? match[1] : null;
 }
 
 function formatRelative(ms: number): string {

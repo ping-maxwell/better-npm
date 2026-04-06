@@ -287,6 +287,173 @@ app.get("/api/internal/user/activity", async (c) => {
   });
 });
 
+app.get("/api/internal/user/packages", async (c) => {
+  const db = c.env.DB;
+  const email = c.req.query("email");
+  if (!email) return c.json({ error: "email required" }, 400);
+
+  const limit = Math.min(Number(c.req.query("limit") || 50), 200);
+  const offset = Number(c.req.query("offset") || 0);
+  const search = c.req.query("search") || "";
+
+  const customer = await db
+    .prepare("SELECT id FROM customer WHERE email = ?")
+    .bind(email)
+    .first<{ id: string }>();
+
+  if (!customer) return c.json({ packages: [], total: 0 });
+
+  let query = `
+    SELECT
+      package_name,
+      COUNT(*) as install_count,
+      COUNT(DISTINCT filename) as version_count,
+      MAX(created_at) as last_installed,
+      MIN(created_at) as first_installed
+    FROM install
+    WHERE customer_id = ?`;
+  const args: any[] = [customer.id];
+
+  if (search) {
+    query += " AND package_name LIKE ?";
+    args.push(`%${search}%`);
+  }
+
+  const SORT_COLUMNS: Record<string, string> = {
+    name: "package_name",
+    installs: "install_count",
+    versions: "version_count",
+    recent: "last_installed",
+  };
+  const sortCol = SORT_COLUMNS[c.req.query("sort") || ""] || "last_installed";
+  const sortDir = c.req.query("order") === "asc" ? "ASC" : "DESC";
+
+  query += ` GROUP BY package_name ORDER BY ${sortCol} ${sortDir} LIMIT ? OFFSET ?`;
+  args.push(limit, offset);
+
+  const result = await db.prepare(query).bind(...args).all();
+
+  let totalQuery = "SELECT COUNT(DISTINCT package_name) as count FROM install WHERE customer_id = ?";
+  const totalArgs: any[] = [customer.id];
+  if (search) {
+    totalQuery += " AND package_name LIKE ?";
+    totalArgs.push(`%${search}%`);
+  }
+  const total = await db.prepare(totalQuery).bind(...totalArgs).first<{ count: number }>();
+
+  const pkgNames = result.results.map((r: any) => r.package_name as string);
+  const statusMap = new Map<string, string>();
+  if (pkgNames.length > 0) {
+    const placeholders = pkgNames.map(() => "?").join(",");
+    const blocked = await db
+      .prepare(`SELECT DISTINCT package_name FROM block_rule WHERE package_name IN (${placeholders})`)
+      .bind(...pkgNames)
+      .all<{ package_name: string }>();
+    for (const b of blocked.results) {
+      statusMap.set(b.package_name, "blocked");
+    }
+
+    const tracked = await db
+      .prepare(`SELECT name, weekly_downloads FROM package WHERE name IN (${placeholders})`)
+      .bind(...pkgNames)
+      .all<{ name: string; weekly_downloads: number }>();
+    for (const t of tracked.results) {
+      if (!statusMap.has(t.name)) {
+        statusMap.set(t.name, "tracked");
+      }
+    }
+  }
+
+  const packages = result.results.map((r: any) => ({
+    ...r,
+    status: statusMap.get(r.package_name) || "untracked",
+  }));
+
+  return c.json({
+    packages,
+    total: total?.count || 0,
+    limit,
+    offset,
+  });
+});
+
+app.get("/api/internal/user/packages/detail", async (c) => {
+  const db = c.env.DB;
+  const email = c.req.query("email");
+  const packageName = c.req.query("name");
+  if (!email || !packageName) return c.json({ error: "email and name required" }, 400);
+
+  const customer = await db
+    .prepare("SELECT id FROM customer WHERE email = ?")
+    .bind(email)
+    .first<{ id: string }>();
+
+  if (!customer) return c.json({ error: "customer not found" }, 404);
+
+  const versions = await db
+    .prepare(`
+      SELECT
+        filename,
+        COUNT(*) as install_count,
+        MAX(created_at) as last_installed,
+        MIN(created_at) as first_installed,
+        version_status
+      FROM install
+      WHERE customer_id = ? AND package_name = ?
+      GROUP BY filename
+      ORDER BY last_installed DESC
+    `)
+    .bind(customer.id, packageName)
+    .all();
+
+  const totals = await db
+    .prepare("SELECT COUNT(*) as count, MIN(created_at) as first, MAX(created_at) as last FROM install WHERE customer_id = ? AND package_name = ?")
+    .bind(customer.id, packageName)
+    .first<{ count: number; first: number; last: number }>();
+
+  const recentInstalls = await db
+    .prepare(
+      "SELECT filename, cache_hit, created_at, version_status FROM install WHERE customer_id = ? AND package_name = ? ORDER BY created_at DESC LIMIT 20",
+    )
+    .bind(customer.id, packageName)
+    .all();
+
+  const tracked = await db
+    .prepare("SELECT id, weekly_downloads, description, latest_known FROM package WHERE name = ?")
+    .bind(packageName)
+    .first<{ id: string; weekly_downloads: number; description: string | null; latest_known: string | null }>();
+
+  let reviewInfo: any[] = [];
+  if (tracked) {
+    const versionRows = await db
+      .prepare("SELECT id, version, status FROM package_version WHERE package_id = ? ORDER BY created_at DESC LIMIT 10")
+      .bind(tracked.id)
+      .all();
+    reviewInfo = versionRows.results;
+  }
+
+  const isBlocked = await db
+    .prepare("SELECT 1 FROM block_rule WHERE package_name = ? LIMIT 1")
+    .bind(packageName)
+    .first();
+
+  return c.json({
+    package_name: packageName,
+    total_installs: totals?.count || 0,
+    first_installed: totals?.first || null,
+    last_installed: totals?.last || null,
+    versions: versions.results,
+    recent: recentInstalls.results,
+    tracked: tracked ? {
+      weekly_downloads: tracked.weekly_downloads,
+      description: tracked.description,
+      latest_known: tracked.latest_known,
+    } : null,
+    review_status: reviewInfo,
+    is_blocked: !!isBlocked,
+  });
+});
+
 app.get("/api/internal/admin/packages", async (c) => {
   const db = c.env.DB;
   const limit = Math.min(Number(c.req.query("limit") || 50), 200);

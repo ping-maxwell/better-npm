@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 
 const tabs = [
   { href: "/dashboard", label: "Overview" },
-  { href: "/dashboard/activity", label: "Activity" },
+  { href: "/dashboard/activity", label: "Packages" },
   { href: "/dashboard/block-rules", label: "Block List" },
 ];
 
