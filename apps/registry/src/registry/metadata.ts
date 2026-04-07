@@ -128,13 +128,13 @@ async function handleMetadata(c: any) {
 		const original = getTyposquatOrigin(packageName);
 		return c.json(
 			{
-				error: `${packageName} is blocked — known typosquat of "${original}"`,
+				error: `${packageName} is blocked - known typosquat of "${original}"`,
 			},
 			403,
 		);
 	}
 
-	// ── DB checks first — no upstream fetch ──────────────────────────────
+	// ── DB checks first - no upstream fetch ──────────────────────────────
 	const [blockRules, tracked] = await Promise.all([
 		getBlockRules(c.env.DB, packageName),
 		getPackageByName(c.env.DB, packageName),
@@ -156,14 +156,14 @@ async function handleMetadata(c: any) {
 		]);
 	}
 
-	// minDownloads is a package-level gate — doesn't need the full packument
+	// minDownloads is a package-level gate - doesn't need the full packument
 	if (minDownloads != null) {
 		const downloads =
 			tracked?.weekly_downloads ?? (await fetchWeeklyDownloads(packageName));
 		if (downloads < minDownloads) {
 			return c.json(
 				{
-					error: `${packageName} is blocked — below your minimum weekly downloads threshold (${downloads.toLocaleString()} < ${minDownloads.toLocaleString()})`,
+					error: `${packageName} is blocked - below your minimum weekly downloads threshold (${downloads.toLocaleString()} < ${minDownloads.toLocaleString()})`,
 				},
 				403,
 			);
@@ -243,10 +243,7 @@ async function handleMetadata(c: any) {
 	return c.json(rewriteTarballUrls(upstream, registryUrl));
 }
 
-async function maybeAutoTrack(
-	env: Env,
-	packageName: string,
-): Promise<void> {
+async function maybeAutoTrack(env: Env, packageName: string): Promise<void> {
 	try {
 		const downloads = await fetchWeeklyDownloads(packageName);
 		if (downloads < MIN_WEEKLY_DOWNLOADS) return;
@@ -339,10 +336,7 @@ async function fastTrackReview(
 
 			console.log(`[fast-track] Queued review for ${packageName}@${version}`);
 		} catch (err) {
-			console.error(
-				`[fast-track] Failed for ${packageName}@${version}:`,
-				err,
-			);
+			console.error(`[fast-track] Failed for ${packageName}@${version}:`, err);
 		}
 	}
 }
@@ -365,13 +359,13 @@ async function handleVersionMetadata(c: any) {
 		const original = getTyposquatOrigin(packageName);
 		return c.json(
 			{
-				error: `${packageName} is blocked — known typosquat of "${original}"`,
+				error: `${packageName} is blocked - known typosquat of "${original}"`,
 			},
 			403,
 		);
 	}
 
-	// ── DB checks first — no upstream fetch ──────────────────────────────
+	// ── DB checks first - no upstream fetch ──────────────────────────────
 	const [blockRules, tracked] = await Promise.all([
 		getBlockRules(c.env.DB, packageName),
 		getPackageByName(c.env.DB, packageName),
@@ -401,12 +395,11 @@ async function handleVersionMetadata(c: any) {
 
 		if (minDownloads != null) {
 			const downloads =
-				tracked?.weekly_downloads ??
-				(await fetchWeeklyDownloads(packageName));
+				tracked?.weekly_downloads ?? (await fetchWeeklyDownloads(packageName));
 			if (downloads < minDownloads) {
 				return c.json(
 					{
-						error: `${packageName} is blocked — below your minimum weekly downloads threshold (${downloads.toLocaleString()} < ${minDownloads.toLocaleString()})`,
+						error: `${packageName} is blocked - below your minimum weekly downloads threshold (${downloads.toLocaleString()} < ${minDownloads.toLocaleString()})`,
 					},
 					403,
 				);
@@ -423,7 +416,7 @@ async function handleVersionMetadata(c: any) {
 		if (ver && ver.status === "rejected") {
 			return c.json(
 				{
-					error: `${packageName}@${version} is rejected — not available for install`,
+					error: `${packageName}@${version} is rejected - not available for install`,
 				},
 				403,
 			);

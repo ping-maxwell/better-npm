@@ -16,7 +16,7 @@ That's it. One line in `.npmrc` and every `npm install` routes through better-np
 | Check                    | How                                                                           |
 | ------------------------ | ----------------------------------------------------------------------------- |
 | **Malicious code**       | Static pattern detection + AI analysis of source diffs                        |
-| **Typosquatting**        | Blocklist of known typosquats — blocks packages that impersonate popular ones |
+| **Typosquatting**        | Blocklist of known typosquats - blocks packages that impersonate popular ones |
 | **Supply chain attacks** | Dependency diffing, maintainer change detection, rapid-publish flagging       |
 
 
@@ -38,8 +38,8 @@ Your npm client talks to `registry.better-npm.dev` instead of `registry.npmjs.or
 
 | Package         | Description                                             |
 | --------------- | ------------------------------------------------------- |
-| `apps/registry` | Cloudflare Worker — registry proxy and scanning pipeline |
-| `apps/web`      | Next.js dashboard — auth, install activity, admin tools |
+| `apps/registry` | Cloudflare Worker - registry proxy and scanning pipeline |
+| `apps/web`      | Next.js dashboard - auth, install activity, admin tools |
 | `packages/cli`  | CLI to configure `.npmrc` and sign in                   |
 
 
@@ -84,7 +84,7 @@ INTERNAL_SECRET=same-shared-secret
 
 ### Publishing & login
 
-better-npm is a read-only registry — it only handles installs. To publish packages or log in to npmjs.org, pass `--registry` directly:
+better-npm is a read-only registry - it only handles installs. To publish packages or log in to npmjs.org, pass `--registry` directly:
 
 ```bash
 npm login --registry https://registry.npmjs.org
