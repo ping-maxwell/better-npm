@@ -5,7 +5,7 @@ import { auth } from "@/lib/auth";
 import { registryFetch } from "@/lib/admin";
 
 export const metadata: Metadata = {
-	title: "Packages — better-npm",
+	title: "Packages - better-npm",
 };
 
 interface PackageSummary {

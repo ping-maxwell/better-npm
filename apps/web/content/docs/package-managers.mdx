@@ -1,0 +1,79 @@
+---
+title: Package Managers
+description: Configuration guides and security considerations for npm, yarn, pnpm, and bun.
+icon: PackageIcon
+---
+
+better-npm works with every major Node.js package manager. Each one has different behaviors around caching and registry resolution that affect your security posture.
+
+## npm
+
+npm is the default package manager for Node.js. It resolves packages from the registry on every install unless the package is already in the local `node_modules` or the lockfile points to a cached tarball.
+
+```ini
+# .npmrc
+registry=https://registry.better-npm.dev/
+```
+
+npm respects the registry setting for all installs, including `npm ci`. Cached tarballs in `~/.npm/_cacache` are keyed by the registry URL, so switching registries forces a fresh fetch.
+
+## yarn
+
+### yarn v1 (Classic)
+
+yarn v1 uses `.npmrc` or `.yarnrc`:
+
+```ini
+# .npmrc
+registry=https://registry.better-npm.dev/
+```
+
+### yarn v2+ (Berry)
+
+yarn Berry uses `.yarnrc.yml`:
+
+```yaml
+npmRegistryServer: "https://registry.better-npm.dev/"
+```
+
+yarn Berry stores packages in a local cache by default. When using PnP (Plug'n'Play) or offline mode, packages are resolved from the cache without contacting the registry. Make sure to clear your yarn cache if you've previously fetched packages from the public npm registry:
+
+```bash
+yarn cache clean --all
+```
+
+## pnpm
+
+pnpm uses a global content-addressable store. It reads the registry from `.npmrc`:
+
+```ini
+# .npmrc
+registry=https://registry.better-npm.dev/
+```
+
+pnpm's store is keyed by content hash, so the same package version from different registries will share storage. New versions are always resolved through the configured registry.
+
+## bun
+
+Bun reads the registry from `.npmrc`, so no additional configuration is needed beyond the [standard setup](/docs/installation). However, bun's manifest caching introduces a security consideration.
+
+### Disabling the Manifest Cache
+
+Bun caches package manifests (the metadata that describes available versions). If a manifest is cached, bun resolves which version to install locally without consulting the registry. This means better-npm never gets the chance to block a flagged version.
+
+Disable manifest caching in your `bunfig.toml`:
+
+```toml
+[install.cache]
+disableManifest = true
+```
+
+With `disableManifest = true`, bun always asks the registry for version resolution. If better-npm has blocked a version, it won't appear in the manifest response and bun won't install it. Tarball caching still works normally, so installs stay fast.
+
+### Clearing the Existing Cache
+
+If you've been using bun before configuring better-npm, clear the existing manifest cache so stale version data doesn't bypass the registry:
+
+```bash
+bun pm cache rm
+```

@@ -1,0 +1,45 @@
+---
+title: Introduction
+description: An open-source npm registry proxy that scans every package release for malicious code, typosquatting, and supply chain attacks.
+icon: BookOpenIcon
+---
+
+## What is better-npm?
+
+better-npm is an open-source npm registry proxy that sits between your package manager and the npm registry. Every new package release is scanned for malicious code, typosquatting, and supply chain attacks before it reaches your `node_modules`.
+
+## Quick Start
+
+Point your `.npmrc` at the registry using the CLI:
+
+```bash
+npx @better-npm/cli
+```
+
+Or manually configure your `.npmrc`:
+
+```ini
+registry=https://registry.better-npm.dev/
+```
+
+## How it Works
+
+When you run `npm install`, the request is routed through the better-npm proxy. Each new version is held and scanned before being served. If a release is flagged, it's quarantined and never reaches your machine.
+
+### Scanning Pipeline
+
+The scanning pipeline runs multiple checks in parallel:
+
+- **Static analysis** - Install scripts, obfuscated payloads, and data exfiltration patterns
+- **Typosquatting detection** - Name similarity checks against popular packages
+- **Supply chain analysis** - Compromised maintainers, dependency confusion, and hijacked packages
+
+### Approved Releases
+
+Once a release passes all checks, it's marked as approved and cached for fast delivery. Subsequent installs of the same version are served directly from the cache.
+
+## Next Steps
+
+- Read the [installation guide](/docs/installation) to set up better-npm
+- Learn how to configure your [package manager](/docs/package-managers) for best security
+- Customize your security policy with [block rules](/docs/block-rules)

@@ -1,0 +1,87 @@
+---
+title: How it Works
+description: A deep dive into the scanning pipeline, approval flow, and architecture of the better-npm registry proxy.
+icon: ScanSearchIcon
+---
+
+better-npm is a transparent proxy that sits between your package manager and the npm registry. Every package version passes through a multi-stage scanning pipeline before it's made available.
+
+## Architecture
+
+```
+┌─────────────┐     ┌──────────────┐     ┌──────────────┐
+│   npm/bun   │────▶│  better-npm  │────▶│   npmjs.org  │
+│   install   │◀────│    proxy     │◀────│   registry   │
+└─────────────┘     └──────────────┘     └──────────────┘
+                           │
+                    ┌──────┴──────┐
+                    │  Scanning   │
+                    │  Pipeline   │
+                    └─────────────┘
+```
+
+When your package manager requests a package:
+
+1. The proxy checks if the version has already been scanned and approved
+2. If approved, the tarball is served immediately from cache
+3. If not yet scanned, the proxy fetches it from the upstream npm registry, runs the scanning pipeline, and either approves or quarantines it
+
+## Scanning Pipeline
+
+Each new package version goes through multiple checks in parallel:
+
+### Static Analysis
+
+The package tarball is extracted and analyzed for:
+
+- **Install scripts** - `preinstall`, `postinstall`, and `install` scripts that execute arbitrary code during `npm install`
+- **Obfuscated code** - Base64 encoding, `eval()` chains, hex-encoded strings, and other patterns used to hide malicious payloads
+- **Network calls** - Outbound HTTP requests, DNS lookups, or socket connections in install scripts
+- **File system access** - Reads of sensitive files like `~/.ssh`, `~/.aws`, or environment variables
+
+### Typosquatting Detection
+
+Package names are compared against the top 10,000 most-downloaded npm packages using:
+
+- **Levenshtein distance** - Catches single-character typos (`lod-ash`, `lodahs`)
+- **Homoglyph detection** - Catches visual lookalikes (`ℓodash` using non-ASCII characters)
+- **Scope confusion** - Catches packages that mimic scoped names (`lodash-official` pretending to be `@lodash/core`)
+
+### Supply Chain Analysis
+
+- **Maintainer changes** - Flags packages where the publishing maintainer changed recently
+- **Dependency confusion** - Detects internal package names being published to the public registry
+- **Hijacked packages** - Cross-references known compromised npm accounts
+
+## Approval Flow
+
+After scanning, each version is assigned a status:
+
+| Status | Meaning |
+|---|---|
+| **approved** | All checks passed. Served to users normally. |
+| **quarantined** | One or more checks failed. Blocked from install. |
+| **pending** | Currently being scanned. Install will wait. |
+
+Quarantined packages are reviewed by the better-npm team. False positives are released after manual review.
+
+## Caching
+
+Approved package versions are cached at the proxy level. Once a version is approved:
+
+- The tarball is stored and served directly, reducing latency
+- No further scanning is performed for that exact version
+- Cache is invalidated only if a version is retroactively flagged
+
+This means first installs of new versions may be slightly slower (scanning takes 1-5 seconds), but subsequent installs are as fast as installing from npm directly.
+
+## Transparency
+
+All scanning decisions are logged and visible from the dashboard:
+
+- Which checks passed or failed
+- When the version was first seen
+- When it was approved or quarantined
+- Who triggered the review (automated or manual)
+
+You can also subscribe to notifications for packages in your dependency tree.

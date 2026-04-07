@@ -1,11 +1,4 @@
-import {
-	describe,
-	it,
-	expect,
-	beforeAll,
-	afterEach,
-	vi,
-} from "vitest";
+import { describe, it, expect, beforeAll, afterEach, vi } from "vitest";
 import { env, exports } from "cloudflare:workers";
 import {
 	runMigrations,
@@ -52,7 +45,10 @@ describe("GET /:name (package metadata)", () => {
 	it("redirects to npm for untracked packages (fast path)", async () => {
 		mockUpstreamFetch(
 			new Map([
-				[downloadsUrl("lodash"), { status: 200, body: JSON.stringify({ downloads: 50_000 }) }],
+				[
+					downloadsUrl("lodash"),
+					{ status: 200, body: JSON.stringify({ downloads: 50_000 }) },
+				],
 			]),
 		);
 
@@ -90,9 +86,7 @@ describe("GET /:name (package metadata)", () => {
 
 		const res = await workerFetch("/tracked-no-reject");
 		expect(res.status).toBe(302);
-		expect(res.headers.get("Location")).toBe(
-			upstreamUrl("tracked-no-reject"),
-		);
+		expect(res.headers.get("Location")).toBe(upstreamUrl("tracked-no-reject"));
 	});
 
 	it("filters versions blocked by admin block rules (slow path)", async () => {
@@ -229,7 +223,7 @@ describe("GET /:name (package metadata)", () => {
 			version: "1.1.0",
 			status: "rejected",
 		});
-		// 2.0.0 and 3.0.0 are NOT in the DB — unknown/unreviewed
+		// 2.0.0 and 3.0.0 are NOT in the DB - unknown/unreviewed
 
 		const res = await workerFetch("/tracked-mixed");
 		expect(res.status).toBe(200);
@@ -244,7 +238,10 @@ describe("GET /:name (package metadata)", () => {
 	it("redirects to npm for scoped packages (fast path)", async () => {
 		mockUpstreamFetch(
 			new Map([
-				[downloadsUrl("@scope/lib"), { status: 200, body: JSON.stringify({ downloads: 2_000 }) }],
+				[
+					downloadsUrl("@scope/lib"),
+					{ status: 200, body: JSON.stringify({ downloads: 2_000 }) },
+				],
 			]),
 		);
 
@@ -276,9 +273,7 @@ describe("GET /:scope/:name/:version (scoped version metadata)", () => {
 	});
 
 	it("rewrites tarball URL to go through registry", async () => {
-		const metadata = makeNpmMetadata("@test/tarball-rewrite", [
-			"1.0.0",
-		]);
+		const metadata = makeNpmMetadata("@test/tarball-rewrite", ["1.0.0"]);
 		const versionData = metadata.versions["1.0.0"];
 		mockUpstreamFetch(
 			new Map([
@@ -335,10 +330,7 @@ describe("GET /:scope/:name/:version (scoped version metadata)", () => {
 	});
 
 	it("allows pending versions without blocking install", async () => {
-		const metadata = makeNpmMetadata("@test/tracked-ver", [
-			"1.0.0",
-			"2.0.0",
-		]);
+		const metadata = makeNpmMetadata("@test/tracked-ver", ["1.0.0", "2.0.0"]);
 		const versionData = metadata.versions["2.0.0"];
 		mockUpstreamFetch(
 			new Map([
@@ -417,10 +409,7 @@ describe("GET /:scope/:name/:version (scoped version metadata)", () => {
 	});
 
 	it("returns 403 for user-blocked versions when authenticated", async () => {
-		const metadata = makeNpmMetadata("@test/user-block", [
-			"1.0.0",
-			"2.0.0",
-		]);
+		const metadata = makeNpmMetadata("@test/user-block", ["1.0.0", "2.0.0"]);
 		mockUpstreamFetch(
 			new Map([
 				[
