@@ -1,0 +1,10 @@
+{
+	"title": "Documentation",
+	"pages": [
+		"index",
+		"installation",
+		"package-managers",
+		"block-rules",
+		"how-it-works"
+	]
+}

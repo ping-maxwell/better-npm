@@ -1,0 +1,100 @@
+---
+title: Block Rules
+description: Customize your security policy with allow and block rules for packages, scopes, and patterns.
+icon: ShieldIcon
+---
+
+Block rules let you define custom security policies on top of the default scanning pipeline. You can block specific packages, entire scopes, or patterns - and create allow-list exceptions.
+
+## Default Behavior
+
+By default, better-npm blocks packages that fail any scan in the pipeline:
+
+- Packages with malicious install scripts
+- Known typosquats
+- Packages from compromised maintainers
+- Packages flagged by the community
+
+Everything else is allowed through after scanning.
+
+## Adding Block Rules
+
+Block rules are managed from the [dashboard](/dashboard/block-rules) or via the API. Each rule has a **pattern** and an **action**.
+
+### Pattern Syntax
+
+Patterns match against package names:
+
+| Pattern | Matches |
+|---|---|
+| `lodash` | Exactly `lodash` |
+| `@evil/*` | Every package in the `@evil` scope |
+| `*-malware` | Any package ending in `-malware` |
+
+### Actions
+
+- **block** - Reject the package. Installs will fail with an error.
+- **allow** - Override a previous block. Useful for exceptions.
+
+## Examples
+
+### Block an Entire Scope
+
+If you want to block every package published under a specific scope:
+
+```json
+{
+  "pattern": "@untrusted/*",
+  "action": "block",
+  "reason": "Untrusted publisher"
+}
+```
+
+### Allow a Specific Package in a Blocked Scope
+
+Combine a broad block with a narrow allow:
+
+```json
+[
+  { "pattern": "@company/*", "action": "block" },
+  { "pattern": "@company/core", "action": "allow" }
+]
+```
+
+Allow rules take priority over block rules for the same package.
+
+### Block a Known Typosquat
+
+```json
+{
+  "pattern": "lodashs",
+  "action": "block",
+  "reason": "Typosquat of lodash"
+}
+```
+
+## User vs. Global Rules
+
+There are two levels of block rules:
+
+- **User rules** - Apply only to your account. Managed from the dashboard.
+- **Global rules** - Applied to all users. Managed by the better-npm team based on community reports and automated detection.
+
+User rules are evaluated after global rules. A user allow-rule can override a global block if the package passes the automated scan.
+
+## API
+
+Block rules can be managed programmatically:
+
+```bash
+# List your rules
+curl -H "Authorization: Bearer $TOKEN" \
+  https://registry.better-npm.dev/api/user/block-rules
+
+# Add a rule
+curl -X POST \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"pattern": "@evil/*", "action": "block"}' \
+  https://registry.better-npm.dev/api/user/block-rules
+```

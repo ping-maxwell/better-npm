@@ -1,0 +1,63 @@
+---
+title: Installation
+description: Set up better-npm in your project with the CLI or manual configuration.
+icon: DownloadIcon
+---
+
+## Using the CLI
+
+The fastest way to get started is with the CLI. It detects your package manager and configures it automatically.
+
+```bash
+npx @better-npm/cli
+```
+
+The CLI will:
+
+1. Detect which package manager you're using (npm, yarn, pnpm, or bun)
+2. Update your configuration files
+3. Verify the connection to the better-npm registry
+
+## Manual Configuration
+
+Create or edit `.npmrc` in your project root:
+
+```ini
+registry=https://registry.better-npm.dev/
+```
+
+Or set it globally:
+
+```bash
+npm config set registry https://registry.better-npm.dev/
+```
+
+This works for **npm**, **pnpm**, **bun**, and **yarn v1** - they all read the registry from `.npmrc`.
+
+### yarn v2+ (Berry)
+
+Yarn Berry does not read `.npmrc`. Add the registry to `.yarnrc.yml` instead:
+
+```yaml
+npmRegistryServer: "https://registry.better-npm.dev/"
+```
+
+## Verifying the Setup
+
+After configuring the registry, run a test install to verify the connection:
+
+```bash
+npm install lodash
+```
+
+If the registry is configured correctly, the install will complete normally.
+
+## CI/CD Environments
+
+For CI/CD pipelines, set the registry via environment variable:
+
+```bash
+npm_config_registry=https://registry.better-npm.dev/ npm install
+```
+
+Or add the `.npmrc` file to your repository so all installs are routed through better-npm.
