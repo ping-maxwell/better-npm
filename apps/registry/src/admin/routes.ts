@@ -783,6 +783,43 @@ app.post("/api/internal/admin/block-rules", async (c) => {
   return c.json({ ok: true, id });
 });
 
+app.put("/api/internal/admin/block-rules/:id", async (c) => {
+  const db = c.env.DB;
+  const id = c.req.param("id");
+
+  const existing = await db
+    .prepare("SELECT id FROM block_rule WHERE id = ?")
+    .bind(id)
+    .first();
+  if (!existing) {
+    return c.json({ error: "block rule not found" }, 404);
+  }
+
+  const { package_name, version_pattern, reason } = await c.req.json<{
+    package_name?: string;
+    version_pattern?: string;
+    reason?: string | null;
+  }>();
+
+  const normalized = normalizeBlockRuleInput({
+    package_name,
+    version_pattern,
+    reason: reason ?? undefined,
+  });
+  if ("error" in normalized) {
+    return c.json({ error: normalized.error }, 400);
+  }
+
+  await db
+    .prepare(
+      "UPDATE block_rule SET package_name = ?, version_pattern = ?, reason = ? WHERE id = ?",
+    )
+    .bind(normalized.packageName, normalized.versionPattern, normalized.reason, id)
+    .run();
+
+  return c.json({ ok: true });
+});
+
 app.delete("/api/internal/admin/block-rules/:id", async (c) => {
   const db = c.env.DB;
   const id = c.req.param("id");
