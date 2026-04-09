@@ -27,6 +27,18 @@ interface UserReport {
 	is_globally_blocked: boolean;
 }
 
+interface EditState {
+	package_name: string;
+	version_pattern: string;
+	reason: string;
+}
+
+const inputClass =
+	"w-full bg-transparent border border-foreground/[0.08] rounded px-3 py-1.5 text-[13px] placeholder:text-foreground/20 outline-none focus:border-foreground/[0.15] transition-colors";
+
+const labelClass =
+	"text-[10px] font-mono uppercase tracking-wider text-foreground/30 block mb-1.5";
+
 export function BlockRulesClient({
 	initialRules,
 	userReports = [],
@@ -42,9 +54,59 @@ export function BlockRulesClient({
 	const [deleting, setDeleting] = useState<string | null>(null);
 	const [promoting, setPromoting] = useState<string | null>(null);
 	const [expandedReport, setExpandedReport] = useState<string | null>(null);
+	const [editingId, setEditingId] = useState<string | null>(null);
+	const [editState, setEditState] = useState<EditState>({
+		package_name: "",
+		version_pattern: "",
+		reason: "",
+	});
+	const [saving, setSaving] = useState(false);
+	const [editError, setEditError] = useState<string | null>(null);
 
 	function getReportKey(report: UserReport) {
 		return `${report.package_name}:${report.version_pattern}`;
+	}
+
+	function startEdit(rule: BlockRule) {
+		setEditingId(rule.id);
+		setEditState({
+			package_name: rule.package_name,
+			version_pattern: rule.version_pattern,
+			reason: rule.reason || "",
+		});
+		setEditError(null);
+	}
+
+	function cancelEdit() {
+		setEditingId(null);
+		setEditError(null);
+	}
+
+	async function handleSaveEdit(id: string) {
+		if (!editState.package_name.trim() || !editState.version_pattern.trim())
+			return;
+		setSaving(true);
+		setEditError(null);
+		try {
+			const res = await fetch(`/api/admin/block-rules/${id}`, {
+				method: "PUT",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					package_name: editState.package_name.trim(),
+					version_pattern: editState.version_pattern.trim(),
+					reason: editState.reason.trim() || null,
+				}),
+			});
+			const data = await res.json();
+			if (!res.ok || data.error) {
+				setEditError(data.error || "Failed to save");
+				return;
+			}
+			setEditingId(null);
+			router.refresh();
+		} finally {
+			setSaving(false);
+		}
 	}
 
 	async function handleAdd(e: React.FormEvent) {
@@ -213,37 +275,31 @@ export function BlockRulesClient({
 				<h3 className="text-sm font-medium mb-4">Add block rule</h3>
 				<div className="grid gap-3 sm:grid-cols-3">
 					<div>
-						<label className="text-[10px] font-mono uppercase tracking-wider text-foreground/30 block mb-1.5">
-							Package name
-						</label>
+						<label className={labelClass}>Package name</label>
 						<input
 							value={packageName}
 							onChange={(e) => setPackageName(e.target.value)}
 							placeholder="e.g. left-pad"
 							required
-							className="w-full bg-transparent border border-foreground/[0.08] rounded px-3 py-1.5 text-[13px] placeholder:text-foreground/20 outline-none focus:border-foreground/[0.15] transition-colors"
+							className={inputClass}
 						/>
 					</div>
 					<div>
-						<label className="text-[10px] font-mono uppercase tracking-wider text-foreground/30 block mb-1.5">
-							Version pattern
-						</label>
+						<label className={labelClass}>Version pattern</label>
 						<input
 							value={versionPattern}
 							onChange={(e) => setVersionPattern(e.target.value)}
 							placeholder="* or >=1.0.0 <2.0.0"
-							className="w-full bg-transparent border border-foreground/[0.08] rounded px-3 py-1.5 text-[13px] placeholder:text-foreground/20 outline-none focus:border-foreground/[0.15] transition-colors"
+							className={inputClass}
 						/>
 					</div>
 					<div>
-						<label className="text-[10px] font-mono uppercase tracking-wider text-foreground/30 block mb-1.5">
-							Reason (optional)
-						</label>
+						<label className={labelClass}>Reason (optional)</label>
 						<input
 							value={reason}
 							onChange={(e) => setReason(e.target.value)}
 							placeholder="e.g. supply chain attack"
-							className="w-full bg-transparent border border-foreground/[0.08] rounded px-3 py-1.5 text-[13px] placeholder:text-foreground/20 outline-none focus:border-foreground/[0.15] transition-colors"
+							className={inputClass}
 						/>
 					</div>
 				</div>
@@ -289,34 +345,121 @@ export function BlockRulesClient({
 						</tr>
 					</thead>
 					<tbody>
-						{initialRules.map((rule) => (
-							<tr
-								key={rule.id}
-								className="border-b border-foreground/[0.04] last:border-0"
-							>
-								<td className="px-4 py-3 font-mono text-[13px]">
-									{rule.package_name}
-								</td>
-								<td className="px-4 py-3 font-mono text-[13px] text-foreground/50">
-									{rule.version_pattern}
-								</td>
-								<td className="px-4 py-3 text-[13px] text-foreground/40">
-									{rule.reason || "-"}
-								</td>
-								<td className="px-4 py-3 text-[13px] text-foreground/30">
-									{formatTs(rule.created_at)}
-								</td>
-								<td className="px-4 py-3 text-right">
-									<button
-										onClick={() => handleDelete(rule.id)}
-										disabled={deleting === rule.id}
-										className="px-2 py-1 text-[11px] rounded border border-foreground/[0.08] text-foreground/40 hover:text-foreground hover:border-foreground/[0.15] transition-colors cursor-pointer disabled:opacity-50"
-									>
-										{deleting === rule.id ? "…" : "Remove"}
-									</button>
-								</td>
-							</tr>
-						))}
+						{initialRules.map((rule) =>
+							editingId === rule.id ? (
+								<tr
+									key={rule.id}
+									className="border-b border-foreground/[0.04] last:border-0 bg-foreground/[0.02]"
+								>
+									<td className="px-4 py-2">
+										<input
+											value={editState.package_name}
+											onChange={(e) =>
+												setEditState((s) => ({
+													...s,
+													package_name: e.target.value,
+												}))
+											}
+											className="w-full bg-transparent border border-foreground/[0.12] rounded px-2 py-1 text-[13px] font-mono outline-none focus:border-foreground/[0.2] transition-colors"
+										/>
+									</td>
+									<td className="px-4 py-2">
+										<input
+											value={editState.version_pattern}
+											onChange={(e) =>
+												setEditState((s) => ({
+													...s,
+													version_pattern: e.target.value,
+												}))
+											}
+											className="w-full bg-transparent border border-foreground/[0.12] rounded px-2 py-1 text-[13px] font-mono outline-none focus:border-foreground/[0.2] transition-colors"
+										/>
+									</td>
+									<td className="px-4 py-2">
+										<input
+											value={editState.reason}
+											onChange={(e) =>
+												setEditState((s) => ({
+													...s,
+													reason: e.target.value,
+												}))
+											}
+											placeholder="optional"
+											className="w-full bg-transparent border border-foreground/[0.12] rounded px-2 py-1 text-[13px] outline-none focus:border-foreground/[0.2] transition-colors placeholder:text-foreground/20"
+										/>
+										{editError && (
+											<p className="text-[11px] text-red-400/80 mt-1">
+												{editError}
+											</p>
+										)}
+									</td>
+									<td className="px-4 py-3 text-[13px] text-foreground/30">
+										{formatTs(rule.created_at)}
+									</td>
+									<td className="px-4 py-2 text-right">
+										<div className="flex items-center justify-end gap-1.5">
+											<button
+												type="button"
+												onClick={() => handleSaveEdit(rule.id)}
+												disabled={
+													saving ||
+													!editState.package_name.trim() ||
+													!editState.version_pattern.trim()
+												}
+												className="px-2 py-1 text-[11px] rounded border border-emerald-500/20 text-emerald-400/80 hover:bg-emerald-500/10 transition-colors cursor-pointer disabled:opacity-50"
+											>
+												{saving ? "…" : "Save"}
+											</button>
+											<button
+												type="button"
+												onClick={cancelEdit}
+												disabled={saving}
+												className="px-2 py-1 text-[11px] rounded border border-foreground/[0.08] text-foreground/40 hover:text-foreground hover:border-foreground/[0.15] transition-colors cursor-pointer disabled:opacity-50"
+											>
+												Cancel
+											</button>
+										</div>
+									</td>
+								</tr>
+							) : (
+								<tr
+									key={rule.id}
+									className="border-b border-foreground/[0.04] last:border-0"
+								>
+									<td className="px-4 py-3 font-mono text-[13px]">
+										{rule.package_name}
+									</td>
+									<td className="px-4 py-3 font-mono text-[13px] text-foreground/50">
+										{rule.version_pattern}
+									</td>
+									<td className="px-4 py-3 text-[13px] text-foreground/40">
+										{rule.reason || "-"}
+									</td>
+									<td className="px-4 py-3 text-[13px] text-foreground/30">
+										{formatTs(rule.created_at)}
+									</td>
+									<td className="px-4 py-3 text-right">
+										<div className="flex items-center justify-end gap-1.5">
+											<button
+												type="button"
+												onClick={() => startEdit(rule)}
+												className="px-2 py-1 text-[11px] rounded border border-foreground/[0.08] text-foreground/40 hover:text-foreground hover:border-foreground/[0.15] transition-colors cursor-pointer"
+											>
+												Edit
+											</button>
+											<button
+												type="button"
+												onClick={() => handleDelete(rule.id)}
+												disabled={deleting === rule.id}
+												className="px-2 py-1 text-[11px] rounded border border-foreground/[0.08] text-foreground/40 hover:text-red-400 hover:border-red-500/20 transition-colors cursor-pointer disabled:opacity-50"
+											>
+												{deleting === rule.id ? "…" : "Remove"}
+											</button>
+										</div>
+									</td>
+								</tr>
+							),
+						)}
 						{initialRules.length === 0 && (
 							<tr>
 								<td
